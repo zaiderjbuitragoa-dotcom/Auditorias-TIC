@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hallazgos · Auditoría TIC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght..144,500;9..144,600&family=Inter:wght;500;600;700&family=IBM+Plex+Mono:wght;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h2>Módulo de hallazgos</h2>
+        <p>Registre y gestione hallazgos con código automático y evidencia asociada</p>
+      </div>
+      <button class="btn" onclick="abrirModal()">+ Nuevo hallazgo</button>
+    </div>
+
+    <div class="contenido">
+      <div class="card">
+        <div class="chip-filtros">
+          <select id="filtro-riesgo" onchange="cargarHallazgos()">
+            <option value="">Todos los riesgos</option>
+            <option>Alto</option><option>Medio</option><option>Bajo</option>
+          </select>
+          <select id="filtro-estado" onchange="cargarHallazgos()">
+            <option value="">Todos los estados</option>
+            <option>Abierto</option><option>En proceso</option><option>Cerrado</option>
+          </select>
+        </div>
+
+        <div class="tabla-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Código</th><th>Criterio incumplido</th><th>Riesgo</th>
+                <th>Responsable</th><th>Fecha límite</th><th>Estado</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="tbody-hallazgos">
+              <tr><td colspan="7" class="vacio">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal crear hallazgo -->
+<div class="modal-fondo" id="modal-hallazgo">
+  <div class="modal">
+    <h3>Nuevo hallazgo</h3>
+    <p class="subt">El código se asigna automáticamente (TIC-HAL-AÑO-###)</p>
+
+    <form id="form-hallazgo">
+      <label>Auditoría relacionada</label>
+      <select id="hal-auditoria" required></select>
+
+      <label>Criterio incumplido</label>
+      <input type="text" id="hal-criterio" required placeholder="Ej: Política de copias de seguridad">
+
+      <label>Descripción del hallazgo</label>
+      <textarea id="hal-descripcion" required placeholder="Describa la situación identificada"></textarea>
+
+      <div class="form-grid">
+        <div>
+          <label>Nivel de riesgo</label>
+          <select id="hal-riesgo"><option>Alto</option><option>Medio</option><option>Bajo</option></select>
+        </div>
+        <div>
+          <label>Responsable</label>
+          <input type="text" id="hal-responsable" required placeholder="Ej: Coordinador TIC">
+        </div>
+        <div>
+          <label>Fecha límite</label>
+          <input type="date" id="hal-fecha" required>
+        </div>
+      </div>
+
+      <label>Acción correctiva propuesta (opcional)</label>
+      <textarea id="hal-accion" placeholder="Acción correctiva inicial sugerida"></textarea>
+
+      <div class="modal-acciones">
+        <button type="button" class="btn secundario" onclick="cerrarModal()">Cancelar</button>
+        <button type="submit" class="btn" id="btn-guardar-hal">Guardar hallazgo</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal detalle / evidencias -->
+<div class="modal-fondo" id="modal-detalle">
+  <div class="modal">
+    <h3 id="detalle-titulo"></h3>
+    <p class="subt" id="detalle-sub"></p>
+    <div id="detalle-cuerpo"></div>
+    <div class="modal-acciones">
+      <button type="button" class="btn secundario" onclick="document.getElementById('modal-detalle').classList.remove('abierto')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+  exigirSesion();
+  renderSidebar('hallazgos.html');
+
+  let hallazgosCache = [];
+  let auditoriasCache = [];
+
+  async function init() {
+    try {
+      const resp = await llamarAPI('listarAuditorias');
+      auditoriasCache = resp.data;
+      document.getElementById('hal-auditoria').innerHTML =
+        auditoriasCache.map(a => `<option value="${a.id}">${escaparHTML(a.codigo)} — ${escaparHTML(a.areaProceso)}</option>`).join('');
+    } catch (err) { mostrarToast(err.message, 'error'); }
+    cargarHallazgos();
+  }
+
+  async function cargarHallazgos() {
+    const tbody = document.getElementById('tbody-hallazgos');
+    tbody.innerHTML = `<tr><td colspan="7" class="vacio">Cargando...</td></tr>`;
+    try {
+      const nivelRiesgo = document.getElementById('filtro-riesgo').value;
+      const estado = document.getElementById('filtro-estado').value;
+      const resp = await llamarAPI('listarHallazgos', { nivelRiesgo, estado });
+      hallazgosCache = resp.data;
+
+      if (!hallazgosCache.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="vacio">No hay hallazgos registrados.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = hallazgosCache.map(h => `
+        <tr>
+          <td><strong>${escaparHTML(h.codigo)}</strong></td>
+          <td>${escaparHTML(h.criterioIncumplido)}</td>
+          <td>${badgeEstado(h.nivelRiesgo)}</td>
+          <td>${escaparHTML(h.responsable)}</td>
+          <td>${escaparHTML(h.fechaLimite)}</td>
+          <td>${badgeEstado(h.estado)}</td>
+          <td class="flex gap-8">
+            <button class="btn secundario pequeno" onclick="verDetalle('${h.id}')">Ver / Evidencia</button>
+            <a class="btn secundario pequeno" href="seguimiento.html?hallazgoId=${h.id}">Plan de acción</a>
+          </td>
+        </tr>`).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" class="vacio">Error: ${escaparHTML(err.message)}</td></tr>`;
+    }
+  }
+
+  function abrirModal() {
+    document.getElementById('form-hallazgo').reset();
+    document.getElementById('modal-hallazgo').classList.add('abierto');
+  }
+  function cerrarModal() { document.getElementById('modal-hallazgo').classList.remove('abierto'); }
+
+  document.getElementById('form-hallazgo').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const btn = document.getElementById('btn-guardar-hal');
+    btn.disabled = true;
+    try {
+      const resp = await llamarAPI('crearHallazgo', {
+        auditoriaId: document.getElementById('hal-auditoria').value,
+        criterioIncumplido: document.getElementById('hal-criterio').value,
+        descripcion: document.getElementById('hal-descripcion').value,
+        nivelRiesgo: document.getElementById('hal-riesgo').value,
+        responsable: document.getElementById('hal-responsable').value,
+        fechaLimite: document.getElementById('hal-fecha').value,
+        accionCorrectiva: document.getElementById('hal-accion').value
+      });
+      mostrarToast('Hallazgo ' + resp.data.codigo + ' creado correctamente', 'exito');
+      cerrarModal();
+      cargarHallazgos();
+    } catch (err) {
+      mostrarToast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  async function verDetalle(id) {
+    const h = hallazgosCache.find(x => x.id === id);
+    if (!h) return;
+    document.getElementById('detalle-titulo').textContent = h.codigo + ' — ' + h.criterioIncumplido;
+    document.getElementById('detalle-sub').textContent = 'Riesgo: ' + h.nivelRiesgo + ' · Estado: ' + h.estado;
+
+    const cuerpo = document.getElementById('detalle-cuerpo');
+    cuerpo.innerHTML = `
+      <p>${escaparHTML(h.descripcion)}</p>
+      <p class="texto-mute">Responsable: ${escaparHTML(h.responsable)} · Fecha límite: ${escaparHTML(h.fechaLimite)}</p>
+      <label>Adjuntar evidencia</label>
+      <input type="file" id="file-detalle">
+      <button class="btn secundario pequeno" style="margin-top:8px;" onclick="subirEvidenciaHallazgo('${h.id}')">Subir evidencia</button>
+      <h4 style="margin-top:18px;">Evidencias cargadas</h4>
+      <div id="lista-evidencias-${h.id}" class="texto-mute">Cargando...</div>
+    `;
+    document.getElementById('modal-detalle').classList.add('abierto');
+    cargarEvidencias(h.id);
+  }
+
+  async function cargarEvidencias(hallazgoId) {
+    const cont = document.getElementById('lista-evidencias-' + hallazgoId);
+    try {
+      const resp = await llamarAPI('listarEvidencias', { hallazgoId });
+      if (!resp.data.length) { cont.innerHTML = 'Sin evidencias adjuntas.'; return; }
+      cont.innerHTML = '<ul>' + resp.data.map(e =>
+        `<li><a href="${e.urlDrive}" target="_blank">${escaparHTML(e.nombreArchivo)}</a> — ${escaparHTML(e.fechaCarga)}</li>`
+      ).join('') + '</ul>';
+    } catch (err) { cont.textContent = 'Error al cargar evidencias.'; }
+  }
+
+  async function subirEvidenciaHallazgo(hallazgoId) {
+    const input = document.getElementById('file-detalle');
+    if (!input.files.length) { mostrarToast('Seleccione un archivo primero', 'error'); return; }
+    const archivo = input.files[0];
+    try {
+      const base64 = await archivoABase64(archivo);
+      await llamarAPI('subirEvidencia', { hallazgoId, nombreArchivo: archivo.name, tipoMime: archivo.type, archivoBase64: base64 });
+      mostrarToast('Evidencia adjuntada', 'exito');
+      cargarEvidencias(hallazgoId);
+    } catch (err) { mostrarToast(err.message, 'error'); }
+  }
+
+  init();
+</script>
+</body>
+</html>

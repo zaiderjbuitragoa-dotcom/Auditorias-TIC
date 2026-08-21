@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auditorías · Auditoría TIC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght..144,500;9..144,600&family=Inter:wght;500;600;700&family=IBM+Plex+Mono:wght;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h2>Gestión de auditorías</h2>
+        <p>Cree y administre las auditorías TIC de su organización</p>
+      </div>
+      <button class="btn" onclick="abrirModal()">+ Nueva auditoría</button>
+    </div>
+
+    <div class="contenido">
+      <div class="card">
+        <div class="chip-filtros">
+          <select id="filtro-estado" onchange="cargarAuditorias()">
+            <option value="">Todos los estados</option>
+            <option>Programada</option>
+            <option>En ejecución</option>
+            <option>Suspendida</option>
+            <option>Cerrada</option>
+          </select>
+        </div>
+
+        <div class="tabla-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Código</th><th>Área / Proceso</th><th>Auditor</th>
+                <th>Inicio</th><th>Cierre</th><th>Estado</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="tbody-auditorias">
+              <tr><td colspan="7" class="vacio">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal crear/editar auditoría -->
+<div class="modal-fondo" id="modal-auditoria">
+  <div class="modal">
+    <h3 id="modal-titulo">Nueva auditoría</h3>
+    <p class="subt">El código se asigna automáticamente (TIC-AUD-AÑO-###)</p>
+
+    <form id="form-auditoria">
+      <input type="hidden" id="aud-id">
+      <div class="form-grid">
+        <div>
+          <label>Área / proceso auditado</label>
+          <input type="text" id="aud-area" required placeholder="Ej: Infraestructura y Redes">
+        </div>
+        <div>
+          <label>Auditor responsable</label>
+          <input type="text" id="aud-auditor" required placeholder="Nombre del auditor líder">
+        </div>
+        <div>
+          <label>Fecha de inicio</label>
+          <input type="date" id="aud-inicio" required>
+        </div>
+        <div>
+          <label>Fecha de cierre (estimada)</label>
+          <input type="date" id="aud-cierre">
+        </div>
+        <div>
+          <label>Estado</label>
+          <select id="aud-estado">
+            <option>Programada</option>
+            <option>En ejecución</option>
+            <option>Suspendida</option>
+            <option>Cerrada</option>
+          </select>
+        </div>
+      </div>
+      <label>Alcance</label>
+      <textarea id="aud-alcance" placeholder="Describa el alcance de la auditoría"></textarea>
+      <label>Objetivo</label>
+      <textarea id="aud-objetivo" placeholder="Describa el objetivo de la auditoría"></textarea>
+
+      <div class="modal-acciones">
+        <button type="button" class="btn secundario" onclick="cerrarModal()">Cancelar</button>
+        <button type="submit" class="btn" id="btn-guardar-aud">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+  exigirSesion();
+  renderSidebar('auditorias.html');
+
+  let auditoriasCache = [];
+
+  async function cargarAuditorias() {
+    const tbody = document.getElementById('tbody-auditorias');
+    tbody.innerHTML = `<tr><td colspan="7" class="vacio">Cargando...</td></tr>`;
+    try {
+      const estado = document.getElementById('filtro-estado').value;
+      const resp = await llamarAPI('listarAuditorias', { estado });
+      auditoriasCache = resp.data;
+
+      if (!auditoriasCache.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="vacio">No hay auditorías registradas todavía.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = auditoriasCache.map(a => `
+        <tr>
+          <td><strong>${escaparHTML(a.codigo)}</strong></td>
+          <td>${escaparHTML(a.areaProceso)}</td>
+          <td>${escaparHTML(a.auditorResponsable)}</td>
+          <td>${escaparHTML(a.fechaInicio)}</td>
+          <td>${escaparHTML(a.fechaCierre || '—')}</td>
+          <td>${badgeEstado(a.estado)}</td>
+          <td class="flex gap-8">
+            <button class="btn secundario pequeno" onclick="editarAuditoria('${a.id}')">Editar</button>
+            <a class="btn secundario pequeno" href="checklist.html?auditoriaId=${a.id}">Checklist</a>
+          </td>
+        </tr>`).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" class="vacio">Error: ${escaparHTML(err.message)}</td></tr>`;
+    }
+  }
+
+  function abrirModal() {
+    document.getElementById('form-auditoria').reset();
+    document.getElementById('aud-id').value = '';
+    document.getElementById('modal-titulo').textContent = 'Nueva auditoría';
+    document.getElementById('modal-auditoria').classList.add('abierto');
+  }
+  function cerrarModal() { document.getElementById('modal-auditoria').classList.remove('abierto'); }
+
+  function editarAuditoria(id) {
+    const a = auditoriasCache.find(x => x.id === id);
+    if (!a) return;
+    document.getElementById('aud-id').value = a.id;
+    document.getElementById('aud-area').value = a.areaProceso;
+    document.getElementById('aud-auditor').value = a.auditorResponsable;
+    document.getElementById('aud-inicio').value = a.fechaInicio;
+    document.getElementById('aud-cierre').value = a.fechaCierre || '';
+    document.getElementById('aud-estado').value = a.estado;
+    document.getElementById('aud-alcance').value = a.alcance || '';
+    document.getElementById('aud-objetivo').value = a.objetivo || '';
+    document.getElementById('modal-titulo').textContent = 'Editar auditoría — ' + a.codigo;
+    document.getElementById('modal-auditoria').classList.add('abierto');
+  }
+
+  document.getElementById('form-auditoria').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const btn = document.getElementById('btn-guardar-aud');
+    btn.disabled = true;
+    const id = document.getElementById('aud-id').value;
+
+    const datos = {
+      areaProceso: document.getElementById('aud-area').value,
+      auditorResponsable: document.getElementById('aud-auditor').value,
+      fechaInicio: document.getElementById('aud-inicio').value,
+      fechaCierre: document.getElementById('aud-cierre').value,
+      estado: document.getElementById('aud-estado').value,
+      alcance: document.getElementById('aud-alcance').value,
+      objetivo: document.getElementById('aud-objetivo').value
+    };
+
+    try {
+      if (id) {
+        await llamarAPI('actualizarAuditoria', { id, cambios: datos });
+        mostrarToast('Auditoría actualizada correctamente', 'exito');
+      } else {
+        await llamarAPI('crearAuditoria', datos);
+        mostrarToast('Auditoría creada correctamente', 'exito');
+      }
+      cerrarModal();
+      cargarAuditorias();
+    } catch (err) {
+      mostrarToast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  cargarAuditorias();
+</script>
+</body>
+</html>

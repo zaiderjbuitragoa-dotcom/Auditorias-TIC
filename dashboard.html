@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard · Auditoría TIC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght..144,500;9..144,600&family=Inter:wght;500;600;700&family=IBM+Plex+Mono:wght;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h2>Dashboard gerencial</h2>
+        <p>Indicadores de gestión y cumplimiento TIC en tiempo real</p>
+      </div>
+      <button class="btn secundario" onclick="cargarDashboard()">↻ Actualizar</button>
+    </div>
+
+    <div class="contenido">
+      <div class="kpi-grid" id="kpi-grid"></div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="mt-0">Hallazgos por nivel de riesgo</h3>
+          <canvas id="chart-riesgo" height="180"></canvas>
+        </div>
+        <div class="card">
+          <h3 class="mt-0">Hallazgos por estado</h3>
+          <canvas id="chart-estado" height="180"></canvas>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:18px;">
+        <div class="card">
+          <h3 class="mt-0">Hallazgos por área / proceso</h3>
+          <canvas id="chart-area" height="200"></canvas>
+        </div>
+        <div class="card">
+          <h3 class="mt-0">Hallazgos por mes</h3>
+          <canvas id="chart-mes" height="200"></canvas>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:18px;">
+        <h3 class="mt-0">Cumplimiento TIC global</h3>
+        <div class="flex gap-16">
+          <div class="barra-progreso" style="flex:1;"><div id="barra-cumplimiento" style="width:0%"></div></div>
+          <strong id="texto-cumplimiento">0%</strong>
+        </div>
+        <p class="texto-mute">Calculado sobre las respuestas "Cumple" del checklist frente al total de preguntas aplicables.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+  exigirSesion();
+  renderSidebar('dashboard.html');
+
+  let graficos = {};
+
+  function tarjetaKPI(valor, etiqueta, clase) {
+    return `<div class="kpi ${clase || ''}">
+      <div class="valor">${valor}</div>
+      <div class="etiqueta">${etiqueta}</div>
+    </div>`;
+  }
+
+  function renderGrafico(id, tipo, labels, data, colores) {
+    if (graficos[id]) graficos[id].destroy();
+    const ctx = document.getElementById(id).getContext('2d');
+    graficos[id] = new Chart(ctx, {
+      type: tipo,
+      data: { labels, datasets: [{ data, backgroundColor: colores, borderRadius: 6 }] },
+      options: {
+        plugins: { legend: { display: tipo === 'doughnut', position: 'bottom' } },
+        scales: tipo === 'bar' ? { y: { beginAtZero: true, ticks: { precision: 0 } } } : {}
+      }
+    });
+  }
+
+  async function cargarDashboard() {
+    try {
+      const resp = await llamarAPI('obtenerDashboard');
+      const { indicadores, graficos: g } = resp.data;
+
+      document.getElementById('kpi-grid').innerHTML = [
+        tarjetaKPI(indicadores.auditoriasRealizadas, 'Auditorías realizadas'),
+        tarjetaKPI(indicadores.auditoriasEnEjecucion, 'Auditorías en ejecución', 'amarillo'),
+        tarjetaKPI(indicadores.hallazgosAbiertos, 'Hallazgos abiertos', 'rojo'),
+        tarjetaKPI(indicadores.hallazgosCriticos, 'Hallazgos críticos', 'rojo'),
+        tarjetaKPI(indicadores.accionesVencidas, 'Acciones vencidas', 'amarillo'),
+        tarjetaKPI(indicadores.accionesCerradas, 'Acciones cerradas', 'verde'),
+        tarjetaKPI(indicadores.cumplimientoTIC + '%', 'Cumplimiento TIC', 'verde'),
+      ].join('');
+
+      const paleta = ['#2b7ac2', '#1b9e6b', '#c98a10', '#d1453b', '#6b7688', '#14416e', '#8ecae6'];
+
+      renderGrafico('chart-riesgo', 'doughnut',
+        Object.keys(g.porNivelRiesgo), Object.values(g.porNivelRiesgo),
+        ['#d1453b', '#c98a10', '#1b9e6b']);
+
+      renderGrafico('chart-estado', 'doughnut',
+        Object.keys(g.porEstadoHallazgo), Object.values(g.porEstadoHallazgo), paleta);
+
+      renderGrafico('chart-area', 'bar',
+        Object.keys(g.porArea), Object.values(g.porArea), '#2b7ac2');
+
+      renderGrafico('chart-mes', 'bar',
+        Object.keys(g.porMes).sort(), Object.keys(g.porMes).sort().map(k => g.porMes[k]), '#14416e');
+
+      document.getElementById('barra-cumplimiento').style.width = indicadores.cumplimientoTIC + '%';
+      document.getElementById('texto-cumplimiento').textContent = indicadores.cumplimientoTIC + '%';
+
+    } catch (err) {
+      mostrarToast(err.message, 'error');
+    }
+  }
+
+  cargarDashboard();
+</script>
+</body>
+</html>

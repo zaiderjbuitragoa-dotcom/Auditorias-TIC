@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lista de verificación · Auditoría TIC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght..144,500;9..144,600&family=Inter:wght;500;600;700&family=IBM+Plex+Mono:wght;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h2>Lista de verificación (checklist)</h2>
+        <p>Evalúe cada componente TIC y registre evidencia de cumplimiento</p>
+      </div>
+    </div>
+
+    <div class="contenido">
+      <div class="card">
+        <div class="chip-filtros">
+          <select id="select-auditoria" onchange="cambiarAuditoria()"></select>
+          <select id="select-componente" onchange="cargarPreguntas()"></select>
+        </div>
+        <div class="flex gap-16" style="margin-bottom:6px;">
+          <div class="barra-progreso" style="flex:1;"><div id="barra-avance" style="width:0%"></div></div>
+          <span class="texto-mute" id="texto-avance">0 / 0 respondidas</span>
+        </div>
+      </div>
+
+      <div id="lista-preguntas"></div>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+  const usuarioSesion = exigirSesion();
+  renderSidebar('checklist.html');
+
+  let auditorias = [];
+  let preguntas = [];
+  let respuestas = {};
+  const params = new URLSearchParams(window.location.search);
+
+  async function init() {
+    try {
+      const resp = await llamarAPI('listarAuditorias');
+      auditorias = resp.data;
+      const select = document.getElementById('select-auditoria');
+      select.innerHTML = auditorias.map(a => `<option value="${a.id}">${escaparHTML(a.codigo)} — ${escaparHTML(a.areaProceso)}</option>`).join('');
+      if (params.get('auditoriaId')) select.value = params.get('auditoriaId');
+
+      const respPreg = await llamarAPI('listarPreguntasChecklist');
+      const componentes = respPreg.componentes;
+      document.getElementById('select-componente').innerHTML = componentes.map(c => `<option>${c}</option>`).join('');
+
+      cambiarAuditoria();
+    } catch (err) { mostrarToast(err.message, 'error'); }
+  }
+
+  async function cambiarAuditoria() {
+    const auditoriaId = document.getElementById('select-auditoria').value;
+    if (!auditoriaId) return;
+    try {
+      const resp = await llamarAPI('listarRespuestasChecklist', { auditoriaId });
+      respuestas = {};
+      resp.data.forEach(r => { respuestas[r.preguntaId] = r; });
+      cargarPreguntas();
+    } catch (err) { mostrarToast(err.message, 'error'); }
+  }
+
+  async function cargarPreguntas() {
+    const componente = document.getElementById('select-componente').value;
+    const cont = document.getElementById('lista-preguntas');
+    cont.innerHTML = `<div class="card"><p class="vacio">Cargando preguntas...</p></div>`;
+    try {
+      const resp = await llamarAPI('listarPreguntasChecklist', { componente });
+      preguntas = resp.data;
+      renderPreguntas();
+    } catch (err) { mostrarToast(err.message, 'error'); }
+  }
+
+  function renderPreguntas() {
+    const cont = document.getElementById('lista-preguntas');
+    if (!preguntas.length) {
+      cont.innerHTML = `<div class="card"><p class="vacio">No hay preguntas para este componente.</p></div>`;
+      return;
+    }
+
+    const opciones = ['Cumple', 'Cumple parcialmente', 'No cumple', 'No aplica'];
+
+    cont.innerHTML = preguntas.map(p => {
+      const r = respuestas[p.id] || {};
+      return `
+      <div class="card" id="preg-${p.id}">
+        <div class="flex-entre">
+          <strong>${escaparHTML(p.pregunta)}</strong>
+          ${r.respuesta ? badgeEstado(r.respuesta) : ''}
+        </div>
+        <p class="texto-mute" style="margin:4px 0 12px;">Criterio: ${escaparHTML(p.criterio)}</p>
+
+        <div class="chip-filtros" style="margin-bottom:8px;">
+          ${opciones.map(op => `
+            <label style="display:inline-flex; align-items:center; gap:6px; font-weight:500; margin:0;">
+              <input type="radio" name="resp-${p.id}" value="${op}" style="width:auto;"
+                ${r.respuesta === op ? 'checked' : ''} onchange="marcarRespuesta('${p.id}', this.value)">
+              ${op}
+            </label>`).join('')}
+        </div>
+
+        <textarea id="obs-${p.id}" placeholder="Observación (opcional)">${escaparHTML(r.observacion || '')}</textarea>
+
+        <div class="flex-entre" style="margin-top:10px;">
+          <label style="margin:0;">
+            📎 <input type="file" id="file-${p.id}" style="width:auto; display:inline; border:none; padding:0;">
+          </label>
+          <div class="flex gap-8">
+            <button class="btn secundario pequeno" onclick="subirEvidenciaPregunta('${p.id}')">Adjuntar evidencia</button>
+            <button class="btn pequeno" onclick="guardarObservacion('${p.id}')">Guardar</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    actualizarAvance();
+  }
+
+  function actualizarAvance() {
+    const total = preguntas.length;
+    const respondidas = preguntas.filter(p => respuestas[p.id] && respuestas[p.id].respuesta).length;
+    const pct = total > 0 ? Math.round((respondidas / total) * 100) : 0;
+    document.getElementById('barra-avance').style.width = pct + '%';
+    document.getElementById('texto-avance').textContent = respondidas + ' / ' + total + ' respondidas';
+  }
+
+  async function marcarRespuesta(preguntaId, valor) {
+    const auditoriaId = document.getElementById('select-auditoria').value;
+    const observacion = document.getElementById('obs-' + preguntaId).value;
+    try {
+      const resp = await llamarAPI('guardarRespuestaChecklist', { auditoriaId, preguntaId, respuesta: valor, observacion });
+      respuestas[preguntaId] = resp.data;
+      mostrarToast('Respuesta guardada', 'exito');
+      renderPreguntas();
+
+      if (valor === 'No cumple' || valor === 'Cumple parcialmente') {
+        mostrarToast('Considere registrar un hallazgo para esta pregunta', '');
+      }
+    } catch (err) { mostrarToast(err.message, 'error'); }
+  }
+
+  async function guardarObservacion(preguntaId) {
+    const auditoriaId = document.getElementById('select-auditoria').value;
+    const r = respuestas[preguntaId];
+    const observacion = document.getElementById('obs-' + preguntaId).value;
+    if (!r || !r.respuesta) { mostrarToast('Seleccione primero una opción de cumplimiento', 'error'); return; }
+    try {
+      await llamarAPI('guardarRespuestaChecklist', { auditoriaId, preguntaId, respuesta: r.respuesta, observacion });
+      mostrarToast('Observación guardada', 'exito');
+    } catch (err) { mostrarToast(err.message, 'error'); }
+  }
+
+  async function subirEvidenciaPregunta(preguntaId) {
+    const auditoriaId = document.getElementById('select-auditoria').value;
+    const input = document.getElementById('file-' + preguntaId);
+    if (!input.files.length) { mostrarToast('Seleccione un archivo primero', 'error'); return; }
+    const archivo = input.files[0];
+    try {
+      const base64 = await archivoABase64(archivo);
+      await llamarAPI('subirEvidencia', {
+        auditoriaId, preguntaId,
+        nombreArchivo: archivo.name, tipoMime: archivo.type, archivoBase64: base64
+      });
+      mostrarToast('Evidencia adjuntada correctamente', 'exito');
+      input.value = '';
+    } catch (err) { mostrarToast(err.message, 'error'); }
+  }
+
+  init();
+</script>
+</body>
+</html>

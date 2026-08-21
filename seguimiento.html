@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan de acción y seguimiento · Auditoría TIC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght..144,500;9..144,600&family=Inter:wght;500;600;700&family=IBM+Plex+Mono:wght;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h2>Plan de acción y seguimiento</h2>
+        <p>Trazabilidad: Hallazgo → Acción → Responsable → Fecha compromiso → Evidencia → Verificación de calidad → Cierre</p>
+      </div>
+    </div>
+
+    <div class="contenido">
+      <div class="card">
+        <label>Seleccione un hallazgo</label>
+        <select id="select-hallazgo" onchange="cambiarHallazgo()"></select>
+      </div>
+
+      <div class="card" id="card-nueva-accion" style="display:none;">
+        <h3 class="mt-0">Registrar nueva acción correctiva</h3>
+        <form id="form-accion" class="form-grid">
+          <div style="grid-column:1/-1;">
+            <label>Acción a ejecutar</label>
+            <textarea id="acc-accion" required placeholder="Describa la acción correctiva"></textarea>
+          </div>
+          <div>
+            <label>Responsable</label>
+            <input type="text" id="acc-responsable" required>
+          </div>
+          <div>
+            <label>Fecha compromiso</label>
+            <input type="date" id="acc-fecha" required>
+          </div>
+          <div style="grid-column:1/-1;">
+            <button type="submit" class="btn">Registrar acción</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card" id="card-lista-acciones" style="display:none;">
+        <h3 class="mt-0">Acciones registradas</h3>
+        <div class="tabla-wrap">
+          <table>
+            <thead>
+              <tr><th>Acción</th><th>Responsable</th><th>Fecha compromiso</th><th>Evidencia</th><th>Verificación</th><th>Estado</th><th></th></tr>
+            </thead>
+            <tbody id="tbody-acciones"><tr><td colspan="7" class="vacio">Seleccione un hallazgo</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" id="card-trazabilidad" style="display:none;">
+        <h3 class="mt-0">🔎 Historial y trazabilidad del hallazgo</h3>
+        <div id="lista-trazabilidad" class="texto-mute">Seleccione un hallazgo</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+  exigirSesion();
+  renderSidebar('seguimiento.html');
+
+  let hallazgos = [];
+  const params = new URLSearchParams(window.location.search);
+
+  async function init() {
+    try {
+      const resp = await llamarAPI('listarHallazgos');
+      hallazgos = resp.data;
+      const select = document.getElementById('select-hallazgo');
+      select.innerHTML = '<option value="">— Seleccione —</option>' +
+        hallazgos.map(h => `<option value="${h.id}">${escaparHTML(h.codigo)} — ${escaparHTML(h.criterioIncumplido)}</option>`).join('');
+      if (params.get('hallazgoId')) {
+        select.value = params.get('hallazgoId');
+        cambiarHallazgo();
+      }
+    } catch (err) { mostrarToast(err.message, 'error'); }
+  }
+
+  function cambiarHallazgo() {
+    const id = document.getElementById('select-hallazgo').value;
+    const visible = !!id;
+    document.getElementById('card-nueva-accion').style.display = visible ? 'block' : 'none';
+    document.getElementById('card-lista-acciones').style.display = visible ? 'block' : 'none';
+    document.getElementById('card-trazabilidad').style.display = visible ? 'block' : 'none';
+    if (visible) { cargarAcciones(); cargarTrazabilidad(); }
+  }
+
+  async function cargarAcciones() {
+    const hallazgoId = document.getElementById('select-hallazgo').value;
+    const tbody = document.getElementById('tbody-acciones');
+    tbody.innerHTML = `<tr><td colspan="7" class="vacio">Cargando...</td></tr>`;
+    try {
+      const resp = await llamarAPI('listarAccionesCorrectivas', { hallazgoId });
+      if (!resp.data.length) { tbody.innerHTML = `<tr><td colspan="7" class="vacio">Sin acciones registradas.</td></tr>`; return; }
+
+      tbody.innerHTML = resp.data.map(a => `
+        <tr>
+          <td>${escaparHTML(a.accion)}</td>
+          <td>${escaparHTML(a.responsable)}</td>
+          <td>${escaparHTML(a.fechaCompromiso)}</td>
+          <td>
+            <input type="file" id="file-acc-${a.id}" style="max-width:140px;">
+            <button class="btn secundario pequeno" onclick="subirEvidenciaAccion('${a.id}','${hallazgoId}')">📎</button>
+          </td>
+          <td>
+            <select onchange="actualizarAccion('${a.id}', {verificacionCalidad: this.value})">
+              <option ${a.verificacionCalidad==='Pendiente'?'selected':''}>Pendiente</option>
+              <option ${a.verificacionCalidad==='Verificado'?'selected':''}>Verificado</option>
+              <option ${a.verificacionCalidad==='Rechazado'?'selected':''}>Rechazado</option>
+            </select>
+          </td>
+          <td>
+            <select onchange="actualizarAccion('${a.id}', {estado: this.value})">
+              <option ${a.estado==='Pendiente'?'selected':''}>Pendiente</option>
+              <option ${a.estado==='En proceso'?'selected':''}>En proceso</option>
+              <option ${a.estado==='Cerrado'?'selected':''}>Cerrado</option>
+            </select>
+          </td>
+          <td>${badgeEstado(a.estado)}</td>
+        </tr>`).join('');
+    } catch (err) { tbody.innerHTML = `<tr><td colspan="7" class="vacio">Error: ${escaparHTML(err.message)}</td></tr>`; }
+  }
+
+  async function actualizarAccion(id, cambios) {
+    try {
+      await llamarAPI('guardarAccionCorrectiva', { id, cambios });
+      mostrarToast('Acción actualizada', 'exito');
+      cargarAcciones();
+      cargarTrazabilidad();
+    } catch (err) { mostrarToast(err.message, 'error'); }
+  }
+
+  async function subirEvidenciaAccion(accionId, hallazgoId) {
+    const input = document.getElementById('file-acc-' + accionId);
+    if (!input.files.length) { mostrarToast('Seleccione un archivo primero', 'error'); return; }
+    const archivo = input.files[0];
+    try {
+      const base64 = await archivoABase64(archivo);
+      const resp = await llamarAPI('subirEvidencia', { hallazgoId, nombreArchivo: archivo.name, tipoMime: archivo.type, archivoBase64: base64 });
+      await llamarAPI('guardarAccionCorrectiva', { id: accionId, cambios: { evidenciaId: resp.data.id } });
+      mostrarToast('Evidencia asociada a la acción', 'exito');
+      cargarAcciones();
+    } catch (err) { mostrarToast(err.message, 'error'); }
+  }
+
+  document.getElementById('form-accion').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const hallazgoId = document.getElementById('select-hallazgo').value;
+    try {
+      await llamarAPI('guardarAccionCorrectiva', {
+        hallazgoId,
+        accion: document.getElementById('acc-accion').value,
+        responsable: document.getElementById('acc-responsable').value,
+        fechaCompromiso: document.getElementById('acc-fecha').value
+      });
+      mostrarToast('Acción correctiva registrada', 'exito');
+      document.getElementById('form-accion').reset();
+      cargarAcciones();
+      cargarTrazabilidad();
+    } catch (err) { mostrarToast(err.message, 'error'); }
+  });
+
+  async function cargarTrazabilidad() {
+    const h = hallazgos.find(x => x.id === document.getElementById('select-hallazgo').value);
+    const cont = document.getElementById('lista-trazabilidad');
+    if (!h) return;
+    try {
+      const resp = await llamarAPI('listarTrazabilidad', { registroAfectado: h.codigo, limite: 30 });
+      if (!resp.data.length) { cont.innerHTML = 'Sin movimientos registrados para este hallazgo.'; return; }
+      cont.innerHTML = resp.data.map(t => `
+        <div style="padding:9px 0; border-bottom:1px solid var(--gris-100);">
+          <strong>${escaparHTML(t.fechaHora)}</strong> — ${escaparHTML(t.usuario)}<br>
+          ${escaparHTML(t.accion)}
+          ${t.valorAnterior || t.valorNuevo ? `<br><span class="texto-mute">De: "${escaparHTML(t.valorAnterior)}" → A: "${escaparHTML(t.valorNuevo)}"</span>` : ''}
+        </div>`).join('');
+    } catch (err) { cont.textContent = 'Error al cargar trazabilidad.'; }
+  }
+
+  init();
+</script>
+</body>
+</html>
