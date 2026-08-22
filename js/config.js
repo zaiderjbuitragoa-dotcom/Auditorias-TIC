@@ -120,13 +120,14 @@ function renderSidebar(paginaActiva) {
   ];
 
   const html = `
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar-principal">
       <div class="sidebar__brand">
         ${SELLO_SVG}
         <div>
           <h1>Auditoría TIC</h1>
           <span>Control &amp; cumplimiento</span>
         </div>
+        <button class="sidebar__cerrar" onclick="toggleSidebarMovil()" aria-label="Cerrar menú">✕</button>
       </div>
       <nav class="sidebar__nav">
         ${enlaces.map(e => `<a href="${e.href}" class="${paginaActiva === e.href ? 'activo' : ''}">
@@ -141,4 +142,37 @@ function renderSidebar(paginaActiva) {
     </aside>`;
 
   document.getElementById('sidebar-slot').outerHTML = html;
+
+  // Overlay oscuro para cerrar el menú tocando fuera (móvil/tablet)
+  if (!document.getElementById('sidebar-overlay')) {
+    const overlay = document.createElement('div');
+    overlay.id = 'sidebar-overlay';
+    overlay.className = 'sidebar-overlay';
+    overlay.onclick = toggleSidebarMovil;
+    document.body.appendChild(overlay);
+  }
+
+  // Botón hamburguesa flotante (solo visible en pantallas angostas vía CSS)
+  if (!document.getElementById('btn-menu-movil')) {
+    const btn = document.createElement('button');
+    btn.id = 'btn-menu-movil';
+    btn.className = 'btn-menu-movil';
+    btn.setAttribute('aria-label', 'Abrir menú');
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>`;
+    btn.onclick = toggleSidebarMovil;
+    document.body.appendChild(btn);
+  }
+
+  // Al navegar en móvil, cerrar el menú automáticamente
+  document.querySelectorAll('.sidebar__nav a').forEach(a => {
+    a.addEventListener('click', () => {
+      document.getElementById('sidebar-principal').classList.remove('abierto');
+      document.getElementById('sidebar-overlay').classList.remove('visible');
+    });
+  });
+}
+
+function toggleSidebarMovil() {
+  document.getElementById('sidebar-principal').classList.toggle('abierto');
+  document.getElementById('sidebar-overlay').classList.toggle('visible');
 }
