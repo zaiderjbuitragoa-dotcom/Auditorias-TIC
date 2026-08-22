@@ -338,3 +338,96 @@ tbody td strong.mono, td .mono { font-family: var(--f-mono); font-size: 12.6px; 
 .toast.mostrar { opacity: 1; transform: translateY(0); }
 .toast.error { background: var(--red-600); }
 .toast.exito { background: var(--seal-600); }
+
+/* ============================================================
+   RESPONSIVO — tablet y móvil
+   ============================================================ */
+
+/* Botón hamburguesa (flotante, solo visible en pantallas angostas) */
+.btn-menu-movil {
+  display: none; position: fixed; top: 14px; left: 14px; z-index: 70;
+  width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--paper-50); box-shadow: var(--sombra); align-items: center; justify-content: center;
+  cursor: pointer; color: var(--ink-900);
+}
+.btn-menu-movil svg { width: 19px; height: 19px; }
+
+/* Fondo oscuro al abrir el menú en móvil */
+.sidebar-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(9,20,34,.55); z-index: 65;
+}
+.sidebar-overlay.visible { display: block; }
+
+.sidebar__cerrar { display: none; }
+
+@media (max-width: 900px) {
+  .btn-menu-movil { display: flex; }
+  .topbar { padding-left: 66px; }
+
+  .sidebar {
+    position: fixed; top: 0; left: 0; height: 100vh; width: 264px;
+    transform: translateX(-105%); transition: transform .25s ease; z-index: 68;
+  }
+  .sidebar.abierto { transform: translateX(0); }
+  .sidebar__cerrar {
+    display: flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14);
+    background: transparent; color: #A9B7CB; cursor: pointer; margin-left: auto;
+  }
+  .sidebar__brand { align-items: flex-start; }
+}
+
+/* Tablet: densidad de contenido, cuadrícula y tablas */
+@media (max-width: 1024px) {
+  .contenido { padding: 22px 24px 44px; }
+  .grid-2 { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+  .contenido { padding: 18px 18px 40px; }
+  .topbar { padding-top: 16px; padding-bottom: 16px; padding-right: 18px; }
+  .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* Móvil */
+@media (max-width: 640px) {
+  .topbar { flex-direction: column; align-items: flex-start; gap: 12px; padding-left: 66px; }
+  .topbar > *:last-child:not(h2):not(p) { width: 100%; }
+  .topbar button.btn, .topbar a.btn { width: 100%; justify-content: center; }
+  .topbar h2 { font-size: 18px; }
+  .topbar p { font-size: 12.5px; }
+
+  .contenido { padding: 14px 14px 36px; }
+  .card { padding: 15px 15px; border-radius: 12px; }
+
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .kpi { padding: 13px 14px; }
+  .kpi .valor { font-size: 21px; }
+  .kpi .etiqueta { font-size: 10.8px; }
+
+  .chip-filtros { flex-direction: column; align-items: stretch; }
+  .chip-filtros select, .chip-filtros input { width: 100%; min-width: 0; }
+
+  table { font-size: 12.3px; }
+  thead th { padding: 8px 9px; font-size: 10px; }
+  tbody td { padding: 9px; }
+
+  .modal { padding: 20px 18px; border-radius: 12px; }
+  .modal-fondo { padding: 0; align-items: stretch; }
+  .modal-fondo .modal { max-width: 100%; min-height: 100vh; border-radius: 0; }
+  .modal-acciones { flex-wrap: wrap; }
+  .modal-acciones .btn { flex: 1; justify-content: center; }
+
+  .form-grid { grid-template-columns: 1fr; }
+
+  .toast { left: 14px; right: 14px; bottom: 14px; text-align: center; }
+}
+
+/* Login: refuerzo del rango móvil (además del corte de panel a 880px) */
+@media (max-width: 480px) {
+  .login-form-wrap { padding: 28px 18px; }
+  .login-card h2 { font-size: 20px; }
+  .login-tabs button { font-size: 12.3px; padding: 8px; }
+  .login-panel__meta { flex-wrap: wrap; gap: 16px 22px; }
+}
