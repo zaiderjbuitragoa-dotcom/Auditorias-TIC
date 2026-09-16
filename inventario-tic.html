@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventario TIC · Auditoría TIC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h2>Inventario TIC — GLPI vs. Manual</h2>
+        <p>Suba los dos inventarios (Excel o CSV) y compare coincidencias, faltantes y diferencias de cantidad</p>
+      </div>
+    </div>
+
+    <div class="contenido">
+      <div class="card">
+        <div class="form-grid">
+          <div>
+            <label>Inventario GLPI (.xlsx, .xls o .csv)</label>
+            <input type="file" id="file-glpi" accept=".xlsx,.xls,.csv">
+          </div>
+          <div>
+            <label>Inventario manual (.xlsx, .xls o .csv)</label>
+            <input type="file" id="file-manual" accept=".xlsx,.xls,.csv">
+          </div>
+        </div>
+        <button class="btn" style="margin-top:14px;" onclick="compararInventarios()">Comparar inventarios</button>
+        <p class="texto-mute" id="estado-carga" style="margin-top:10px;"></p>
+        <p class="texto-mute" style="margin-top:6px;">
+          El sistema busca automáticamente columnas de <strong>serie/serial</strong>, <strong>referencia/nombre</strong>
+          y <strong>cantidad</strong> en cada archivo (no importa el orden ni el nombre exacto de encabezado).
+          Si un ítem tiene número de serie, se cruza por serie; si no, se agrupa por referencia y se compara la cantidad.
+        </p>
+      </div>
+
+      <div id="resultado-comparacion" style="display:none;">
+        <div class="kpi-grid" id="kpi-comparacion"></div>
+
+        <div class="card" style="margin-top:18px;">
+          <h3 class="mt-0">Faltantes en el inventario manual</h3>
+          <p class="texto-mute">Registrado en GLPI pero no aparece (o aparece con menor cantidad) en el archivo manual.</p>
+          <div class="tabla-wrap">
+            <table>
+              <thead><tr><th>Serie</th><th>Referencia / Nombre</th><th>Cant. GLPI</th><th>Cant. manual</th></tr></thead>
+              <tbody id="tbody-faltan-manual"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:18px;">
+          <h3 class="mt-0">Faltantes en GLPI</h3>
+          <p class="texto-mute">Registrado en el inventario manual pero no aparece (o aparece con menor cantidad) en GLPI.</p>
+          <div class="tabla-wrap">
+            <table>
+              <thead><tr><th>Serie</th><th>Referencia / Nombre</th><th>Cant. manual</th><th>Cant. GLPI</th></tr></thead>
+              <tbody id="tbody-faltan-glpi"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:18px;">
+          <h3 class="mt-0">Coincidencias</h3>
+          <div class="tabla-wrap">
+            <table>
+              <thead><tr><th>Serie</th><th>Referencia / Nombre</th><th>Cantidad</th></tr></thead>
+              <tbody id="tbody-coinciden"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+  exigirSesion();
+  renderSidebar('inventario-tic.html');
+
+  /** ---------- Lectura de archivos (Excel vía SheetJS, CSV a mano) ---------- */
+
+  async function procesarArchivo(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'csv') {
+      const texto = await file.text();
+      return parsearCSV(texto);
+    }
+    const buffer = await file.arrayBuffer();
+    const libro = XLSX.read(buffer, { type: 'array' });
+    const hoja = libro.Sheets[libro.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(hoja, { defval: '' });
+  }
+
+  function parsearCSV(texto) {
+    const lineas = texto.split(/\r?\n/).filter(l => l.trim() !== '');
+    if (!lineas.length) return [];
+    const delimitador = (lineas[0].split(';').length > lineas[0].split(',').length) ? ';' : ',';
+    const encabezados = dividirLineaCSV(lineas[0], delimitador).map(h => h.trim());
+    return lineas.slice(1).map(linea => {
+      const valores = dividirLineaCSV(linea, delimitador);
+      const obj = {};
+      encabezados.forEach((h, i) => { obj[h] = (valores[i] !== undefined ? valores[i].trim() : ''); });
+      return obj;
+    });
+  }
+
+  function dividirLineaCSV(linea, delimitador) {
+    const resultado = [];
+    let actual = '';
+    let entreComillas = false;
+    for (let i = 0; i < linea.length; i++) {
+      const c = linea[i];
+      if (c === '"') { entreComillas = !entreComillas; continue; }
+      if (c === delimitador && !entreComillas) { resultado.push(actual); actual = ''; continue; }
+      actual += c;
+    }
+    resultado.push(actual);
+    return resultado;
+  }
+
+  /** ---------- Detección flexible de columnas ---------- */
+
+  function detectarColumnas(filas) {
+    if (!filas.length) return { colSerie: null, colRef: null, colCant: null };
+    const encabezados = Object.keys(filas[0]);
+    const buscar = (patrones) => encabezados.find(h => patrones.some(p => h.toLowerCase().includes(p)));
+    return {
+      colSerie: buscar(['serie', 'serial']),
+      colRef: buscar(['referencia', 'nombre', 'descripcion', 'descripción', 'equipo', 'articulo', 'artículo']),
+      colCant: buscar(['cantidad', 'cant'])
+    };
+  }
+
+  function normalizarTexto(t) {
+    return String(t || '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  /** Construye dos mapas: uno para ítems con serie (clave = serie) y otro para ítems
+   *  sin serie, agrupados y sumados por referencia/nombre normalizado. */
+  function construirMapa(filas, cols) {
+    const conSerie = new Map();
+    const sinSerie = new Map();
+    filas.forEach(f => {
+      const serie = cols.colSerie ? normalizarTexto(f[cols.colSerie]) : '';
+      const referencia = cols.colRef ? String(f[cols.colRef] || '').trim() : '(sin referencia)';
+      const cantidad = cols.colCant ? (parseFloat(f[cols.colCant]) || 1) : 1;
+      if (serie) {
+        const actual = conSerie.get(serie) || { referencia, cantidad: 0 };
+        actual.cantidad += cantidad;
+        conSerie.set(serie, actual);
+      } else {
+        const clave = normalizarTexto(referencia);
+        const actual = sinSerie.get(clave) || { referencia, cantidad: 0 };
+        actual.cantidad += cantidad;
+        sinSerie.set(clave, actual);
+      }
+    });
+    return { conSerie, sinSerie };
+  }
+
+  /** ---------- Comparación ---------- */
+
+  async function compararInventarios() {
+    const fileGlpi = document.getElementById('file-glpi').files[0];
+    const fileManual = document.getElementById('file-manual').files[0];
+    if (!fileGlpi || !fileManual) { mostrarToast('Seleccione los dos archivos.', 'error'); return; }
+
+    const estado = document.getElementById('estado-carga');
+    estado.textContent = 'Procesando archivos...';
+
+    try {
+      const [filasGlpi, filasManual] = await Promise.all([procesarArchivo(fileGlpi), procesarArchivo(fileManual)]);
+      const colsGlpi = detectarColumnas(filasGlpi);
+      const colsManual = detectarColumnas(filasManual);
+
+      if (!colsGlpi.colRef && !colsGlpi.colSerie) throw new Error('No se detectó columna de serie ni de referencia/nombre en el archivo GLPI.');
+      if (!colsManual.colRef && !colsManual.colSerie) throw new Error('No se detectó columna de serie ni de referencia/nombre en el archivo manual.');
+
+      const mapaGlpi = construirMapa(filasGlpi, colsGlpi);
+      const mapaManual = construirMapa(filasManual, colsManual);
+
+      const coincidencias = [];
+      const faltanEnManual = [];
+      const faltanEnGlpi = [];
+
+      mapaGlpi.conSerie.forEach((datoG, serie) => {
+        const datoM = mapaManual.conSerie.get(serie);
+        if (!datoM) faltanEnManual.push({ serie, referencia: datoG.referencia, cantGlpi: datoG.cantidad, cantManual: 0 });
+        else if (datoM.cantidad < datoG.cantidad) faltanEnManual.push({ serie, referencia: datoG.referencia, cantGlpi: datoG.cantidad, cantManual: datoM.cantidad });
+        else coincidencias.push({ serie, referencia: datoG.referencia, cantidad: datoG.cantidad });
+      });
+      mapaManual.conSerie.forEach((datoM, serie) => {
+        const datoG = mapaGlpi.conSerie.get(serie);
+        if (!datoG) faltanEnGlpi.push({ serie, referencia: datoM.referencia, cantManual: datoM.cantidad, cantGlpi: 0 });
+        else if (datoG.cantidad < datoM.cantidad) faltanEnGlpi.push({ serie, referencia: datoM.referencia, cantManual: datoM.cantidad, cantGlpi: datoG.cantidad });
+      });
+
+      mapaGlpi.sinSerie.forEach((datoG, clave) => {
+        const datoM = mapaManual.sinSerie.get(clave);
+        if (!datoM) faltanEnManual.push({ serie: '—', referencia: datoG.referencia, cantGlpi: datoG.cantidad, cantManual: 0 });
+        else if (datoM.cantidad < datoG.cantidad) faltanEnManual.push({ serie: '—', referencia: datoG.referencia, cantGlpi: datoG.cantidad, cantManual: datoM.cantidad });
+        else coincidencias.push({ serie: '—', referencia: datoG.referencia, cantidad: datoG.cantidad });
+      });
+      mapaManual.sinSerie.forEach((datoM, clave) => {
+        const datoG = mapaGlpi.sinSerie.get(clave);
+        if (!datoG) faltanEnGlpi.push({ serie: '—', referencia: datoM.referencia, cantManual: datoM.cantidad, cantGlpi: 0 });
+        else if (datoG.cantidad < datoM.cantidad) faltanEnGlpi.push({ serie: '—', referencia: datoM.referencia, cantManual: datoM.cantidad, cantGlpi: datoG.cantidad });
+      });
+
+      renderizarResultado({ filasGlpi, filasManual, coincidencias, faltanEnManual, faltanEnGlpi });
+      estado.textContent = '';
+    } catch (err) {
+      estado.textContent = '';
+      mostrarToast(err.message, 'error');
+    }
+  }
+
+  function tarjetaKPI(valor, etiqueta, clase) {
+    return `<div class="kpi ${clase || ''}"><div class="valor">${valor}</div><div class="etiqueta">${etiqueta}</div></div>`;
+  }
+
+  function renderizarResultado({ filasGlpi, filasManual, coincidencias, faltanEnManual, faltanEnGlpi }) {
+    document.getElementById('resultado-comparacion').style.display = 'block';
+
+    document.getElementById('kpi-comparacion').innerHTML = [
+      tarjetaKPI(filasGlpi.length, 'Registros en GLPI'),
+      tarjetaKPI(filasManual.length, 'Registros en manual'),
+      tarjetaKPI(coincidencias.length, 'Coincidencias', 'verde'),
+      tarjetaKPI(faltanEnManual.length, 'Faltantes en manual', 'rojo'),
+      tarjetaKPI(faltanEnGlpi.length, 'Faltantes en GLPI', 'amarillo')
+    ].join('');
+
+    document.getElementById('tbody-faltan-manual').innerHTML = faltanEnManual.length
+      ? faltanEnManual.map(f => `<tr><td>${escaparHTML(f.serie)}</td><td>${escaparHTML(f.referencia)}</td><td>${f.cantGlpi}</td><td>${f.cantManual}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="vacio">Sin diferencias.</td></tr>';
+
+    document.getElementById('tbody-faltan-glpi').innerHTML = faltanEnGlpi.length
+      ? faltanEnGlpi.map(f => `<tr><td>${escaparHTML(f.serie)}</td><td>${escaparHTML(f.referencia)}</td><td>${f.cantManual}</td><td>${f.cantGlpi}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="vacio">Sin diferencias.</td></tr>';
+
+    document.getElementById('tbody-coinciden').innerHTML = coincidencias.length
+      ? coincidencias.map(c => `<tr><td>${escaparHTML(c.serie)}</td><td>${escaparHTML(c.referencia)}</td><td>${c.cantidad}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="vacio">Sin coincidencias.</td></tr>';
+  }
+</script>
+</body>
+</html>
