@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Usuarios · Auditoría TIC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-slot"></div>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h2>Gestión de usuarios</h2>
+        <p>Cree cuentas, active o desactive accesos y restablezca contraseñas</p>
+      </div>
+      <button class="btn" onclick="abrirModalCrear()">+ Nuevo usuario</button>
+    </div>
+
+    <div class="contenido">
+      <div class="card">
+        <div class="tabla-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Usuario</th><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Creado</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="tbody-usuarios">
+              <tr><td colspan="7" class="vacio">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal crear usuario -->
+<div class="modal-fondo" id="modal-crear">
+  <div class="modal">
+    <h3>Nuevo usuario</h3>
+    <p class="subt">La cuenta queda activa de inmediato con la contraseña que asigne aquí</p>
+
+    <form id="form-crear">
+      <label>Nombre completo</label>
+      <input type="text" id="crear-nombre" required placeholder="Nombre y apellido">
+
+      <label>Usuario</label>
+      <input type="text" id="crear-usuario" required placeholder="nombre.usuario">
+
+      <label>Correo institucional</label>
+      <input type="email" id="crear-correo" placeholder="nombre@empresa.com">
+
+      <div class="form-grid">
+        <div>
+          <label>Rol</label>
+          <select id="crear-rol">
+            <option>Administrador</option>
+            <option>Auditor Líder</option>
+            <option>Auditor</option>
+            <option>Responsable de Área</option>
+            <option>Consulta</option>
+          </select>
+        </div>
+        <div>
+          <label>Contraseña</label>
+          <input type="text" id="crear-password" required placeholder="Mínimo 8 caracteres">
+        </div>
+      </div>
+
+      <div class="modal-acciones">
+        <button type="button" class="btn secundario" onclick="cerrarModalCrear()">Cancelar</button>
+        <button type="submit" class="btn" id="btn-guardar-crear">Crear usuario</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal editar usuario -->
+<div class="modal-fondo" id="modal-editar">
+  <div class="modal">
+    <h3>Editar usuario</h3>
+    <p class="subt" id="editar-usuario-label"></p>
+
+    <form id="form-editar">
+      <input type="hidden" id="editar-id">
+
+      <label>Nombre completo</label>
+      <input type="text" id="editar-nombre" required>
+
+      <label>Correo institucional</label>
+      <input type="email" id="editar-correo">
+
+      <div class="form-grid">
+        <div>
+          <label>Rol</label>
+          <select id="editar-rol">
+            <option>Administrador</option>
+            <option>Auditor Líder</option>
+            <option>Auditor</option>
+            <option>Responsable de Área</option>
+            <option>Consulta</option>
+          </select>
+        </div>
+        <div>
+          <label>Estado</label>
+          <select id="editar-activo">
+            <option value="true">Activo</option>
+            <option value="false">Inactivo</option>
+          </select>
+        </div>
+      </div>
+
+      <label>Nueva contraseña (dejar en blanco para no cambiarla)</label>
+      <input type="text" id="editar-password" placeholder="Mínimo 8 caracteres">
+
+      <div class="modal-acciones">
+        <button type="button" class="btn secundario" onclick="cerrarModalEditar()">Cancelar</button>
+        <button type="submit" class="btn" id="btn-guardar-editar">Guardar cambios</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+  const sesionActual = exigirSesion();
+  renderSidebar('usuarios.html');
+
+  if (sesionActual && sesionActual.rol !== 'Administrador') {
+    mostrarToast('Solo un Administrador puede acceder a este módulo.', 'error');
+    window.location.href = 'dashboard.html';
+  }
+
+  let usuariosCache = [];
+
+  async function cargarUsuarios() {
+    const tbody = document.getElementById('tbody-usuarios');
+    tbody.innerHTML = `<tr><td colspan="7" class="vacio">Cargando...</td></tr>`;
+    try {
+      const resp = await llamarAPI('listarUsuarios');
+      usuariosCache = resp.data;
+
+      if (!usuariosCache.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="vacio">No hay usuarios registrados.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = usuariosCache.map(u => `
+        <tr>
+          <td><strong>${escaparHTML(u.usuario)}</strong></td>
+          <td>${escaparHTML(u.nombre)}</td>
+          <td>${escaparHTML(u.correo)}</td>
+          <td>${escaparHTML(u.rol)}</td>
+          <td>${badgeEstado(esActivoValor(u.activo) ? 'Verificado' : 'Rechazado')} ${esActivoValor(u.activo) ? 'Activo' : 'Inactivo'}</td>
+          <td>${escaparHTML(u.fechaCreacion)}</td>
+          <td class="flex gap-8">
+            <button class="btn secundario pequeno" onclick="abrirModalEditar('${u.id}')">Editar</button>
+            <button class="btn secundario pequeno" onclick="alternarActivo('${u.id}', ${esActivoValor(u.activo)})">
+              ${esActivoValor(u.activo) ? 'Desactivar' : 'Activar'}
+            </button>
+          </td>
+        </tr>`).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" class="vacio">Error: ${escaparHTML(err.message)}</td></tr>`;
+    }
+  }
+
+  /** Normaliza el valor de la columna "activo" de Sheets (booleano real o texto "TRUE") */
+  function esActivoValor(valor) {
+    return valor === true || String(valor).trim().toUpperCase() === 'TRUE';
+  }
+
+  function abrirModalCrear() {
+    document.getElementById('form-crear').reset();
+    document.getElementById('modal-crear').classList.add('abierto');
+  }
+  function cerrarModalCrear() { document.getElementById('modal-crear').classList.remove('abierto'); }
+
+  document.getElementById('form-crear').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const btn = document.getElementById('btn-guardar-crear');
+    btn.disabled = true;
+    try {
+      const resp = await llamarAPI('crearUsuario', {
+        nombre: document.getElementById('crear-nombre').value.trim(),
+        usuario: document.getElementById('crear-usuario').value.trim(),
+        correo: document.getElementById('crear-correo').value.trim(),
+        rol: document.getElementById('crear-rol').value,
+        password: document.getElementById('crear-password').value
+      });
+      mostrarToast('Usuario ' + resp.data.usuario + ' creado correctamente', 'exito');
+      cerrarModalCrear();
+      cargarUsuarios();
+    } catch (err) {
+      mostrarToast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  function abrirModalEditar(id) {
+    const u = usuariosCache.find(x => x.id === id);
+    if (!u) return;
+    document.getElementById('editar-id').value = u.id;
+    document.getElementById('editar-usuario-label').textContent = 'Usuario: ' + u.usuario;
+    document.getElementById('editar-nombre').value = u.nombre || '';
+    document.getElementById('editar-correo').value = u.correo || '';
+    document.getElementById('editar-rol').value = u.rol || 'Consulta';
+    document.getElementById('editar-activo').value = esActivoValor(u.activo) ? 'true' : 'false';
+    document.getElementById('editar-password').value = '';
+    document.getElementById('modal-editar').classList.add('abierto');
+  }
+  function cerrarModalEditar() { document.getElementById('modal-editar').classList.remove('abierto'); }
+
+  document.getElementById('form-editar').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const btn = document.getElementById('btn-guardar-editar');
+    btn.disabled = true;
+    try {
+      const cambios = {
+        nombre: document.getElementById('editar-nombre').value.trim(),
+        correo: document.getElementById('editar-correo').value.trim(),
+        rol: document.getElementById('editar-rol').value,
+        activo: document.getElementById('editar-activo').value === 'true'
+      };
+      const nuevaPassword = document.getElementById('editar-password').value;
+      if (nuevaPassword) cambios.password = nuevaPassword;
+
+      await llamarAPI('actualizarUsuario', { id: document.getElementById('editar-id').value, cambios });
+      mostrarToast('Usuario actualizado correctamente', 'exito');
+      cerrarModalEditar();
+      cargarUsuarios();
+    } catch (err) {
+      mostrarToast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  async function alternarActivo(id, estaActivo) {
+    try {
+      await llamarAPI('actualizarUsuario', { id, cambios: { activo: !estaActivo } });
+      mostrarToast(!estaActivo ? 'Usuario activado' : 'Usuario desactivado', 'exito');
+      cargarUsuarios();
+    } catch (err) {
+      mostrarToast(err.message, 'error');
+    }
+  }
+
+  cargarUsuarios();
+</script>
+</body>
+</html>
