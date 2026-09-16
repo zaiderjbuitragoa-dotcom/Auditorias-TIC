@@ -105,7 +105,9 @@ const ICONOS_NAV = {
   auditorias: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3.5" width="14" height="18" rx="1.6"/><path d="M9 3.5V2.5C9 2 9.4 1.6 9.9 1.6h4.2c.5 0 .9.4.9.9v1"/><path d="M8.5 10h7M8.5 13.3h7M8.5 16.6h4.5"/></svg>',
   checklist: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5h10.5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9"/><path d="M3.5 8.5l1.7 1.7L8.5 6.8"/><path d="M12.5 8h6M12.5 12.5h6M9 12.5h.01M12.5 17h6M9 17h.01"/></svg>',
   hallazgos: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21.5 20h-19L12 3.5Z"/><path d="M12 10v4.2M12 17.2h.01"/></svg>',
-  seguimiento: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r=".6" fill="currentColor"/></svg>'
+  seguimiento: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r=".6" fill="currentColor"/></svg>',
+  usuarios: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3.2"/><path d="M3.5 20c.7-3.6 3.2-5.6 5.5-5.6s4.8 2 5.5 5.6"/><path d="M16 8.2a2.9 2.9 0 1 1 0 5.8"/><path d="M18.7 14.8c1.7.7 2.9 2.4 3.3 4.6"/></svg>',
+  inventario: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5 12 3.5l8 4v9l-8 4-8-4v-9Z"/><path d="M4 7.5 12 11.5l8-4"/><path d="M12 11.5V20"/></svg>'
 };
 
 /** Inyecta el sidebar de navegación común en todas las páginas internas */
@@ -116,8 +118,12 @@ function renderSidebar(paginaActiva) {
     { href: 'auditorias.html', icono: ICONOS_NAV.auditorias, texto: 'Auditorías' },
     { href: 'checklist.html', icono: ICONOS_NAV.checklist, texto: 'Lista de verificación' },
     { href: 'hallazgos.html', icono: ICONOS_NAV.hallazgos, texto: 'Hallazgos' },
-    { href: 'seguimiento.html', icono: ICONOS_NAV.seguimiento, texto: 'Plan de acción' }
+    { href: 'seguimiento.html', icono: ICONOS_NAV.seguimiento, texto: 'Plan de acción' },
+    { href: 'inventario-tic.html', icono: ICONOS_NAV.inventario, texto: 'Inventario TIC' }
   ];
+  if (usuario.rol === 'Administrador') {
+    enlaces.push({ href: 'usuarios.html', icono: ICONOS_NAV.usuarios, texto: 'Usuarios' });
+  }
 
   const html = `
     <aside class="sidebar" id="sidebar-principal">
