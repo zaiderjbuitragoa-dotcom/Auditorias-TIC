@@ -147,8 +147,8 @@
       mostrarToast('Respuesta guardada', 'exito');
       renderPreguntas();
 
-      if (valor === 'No cumple' || valor === 'Cumple parcialmente') {
-        mostrarToast('Considere registrar un hallazgo para esta pregunta', '');
+      if ((valor === 'No cumple' || valor === 'Cumple parcialmente') && resp.data.hallazgoGenerado) {
+        mostrarToast('Se generó un hallazgo automáticamente. Asigne responsable y fecha límite en el módulo de Hallazgos.', '');
       }
     } catch (err) { mostrarToast(err.message, 'error'); }
   }
